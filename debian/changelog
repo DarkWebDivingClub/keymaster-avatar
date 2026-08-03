@@ -1,3 +1,10 @@
+keymaster-avatar (0.5.2-2) resolute; urgency=medium
+
+  * Explicitly resubscribe relay filters after wake reconnect
+  * Don't rely on nostr-sdk internal resubscribe heuristics
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Mon, 03 Aug 2026 17:00:00 +0200
+
 keymaster-avatar (0.5.2-1) resolute; urgency=medium
 
   * Mission 26.1.1.2 — relay reconnect after sleep/wake
