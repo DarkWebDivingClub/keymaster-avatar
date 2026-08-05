@@ -1,3 +1,12 @@
+keymaster-avatar (0.5.3-1+deb13) trixie; urgency=medium
+
+  * Fix multi-identity service channel routing (p-tag mismatch)
+  * Scope find_service_channel to per-user API socket identity
+  * Idempotent re-attach: ack without session teardown when
+    realm_xpub is unchanged (phone reboot / network reconnect)
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Wed, 06 Aug 2026 00:20:00 +0200
+
 keymaster-avatar (0.5.2-2+deb13) trixie; urgency=medium
 
   * Explicitly resubscribe relay filters after wake reconnect
