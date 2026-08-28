@@ -1,3 +1,15 @@
+keymaster-avatar (0.6.0-1+deb13) trixie; urgency=medium
+
+  * Mission 35 — Upgrade nostr-sdk 0.37 → 0.45
+  * Fix WebSocket Pong delay: periodic flush drains pending Pong
+    frames in split-stream architecture (dwdc fork v0.45.2-dwdc.1)
+  * Adapt to nostr-sdk 0.45 API changes (Client::builder,
+    finalize, notifications stream, SingleLetterTag, etc.)
+  * Remove explicit relay resubscribe on wake (pool-level
+    subscriptions survive reconnect in 0.45)
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Thu, 28 Aug 2026 15:30:00 +0200
+
 keymaster-avatar (0.5.3-1+deb13) trixie; urgency=medium
 
   * Fix multi-identity service channel routing (p-tag mismatch)
