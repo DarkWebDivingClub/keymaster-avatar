@@ -1,0 +1,13 @@
+#!/bin/bash
+# Restart BT PAN after resume from sleep.
+# bt-nap's D-Bus NAP registration goes stale when the BT adapter resets.
+# dnsmasq needs the bridge to exist, so it must restart after bt-nap.
+# km-avatar reconnects to the relay via its own D-Bus sleep listener.
+
+case "$1" in
+    post)
+        systemctl restart bt-nap.service || true
+        sleep 2
+        systemctl restart dnsmasq.service || true
+        ;;
+esac
