@@ -1,3 +1,10 @@
+keymaster-avatar (0.6.0-2+deb13) trixie; urgency=medium
+
+  * Install km-avatar-resume sleep hook — restarts bt-nap and
+    dnsmasq on wake so BT PAN recovers automatically
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Tue, 02 Sep 2026 09:30:00 +0200
+
 keymaster-avatar (0.6.0-1+deb13) trixie; urgency=medium
 
   * Mission 35 — Upgrade nostr-sdk 0.37 → 0.45
