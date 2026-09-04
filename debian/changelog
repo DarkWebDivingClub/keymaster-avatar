@@ -1,3 +1,11 @@
+keymaster-avatar (0.6.0-3) resolute; urgency=medium
+
+  * Ship NetworkManager drop-in to mark bt-nap-br and bnep*
+    unmanaged — prevents NM from stripping the bridge IP after
+    sleep/wake
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Thu, 04 Sep 2026 10:00:00 +0200
+
 keymaster-avatar (0.6.0-2) resolute; urgency=medium
 
   * Install km-avatar-resume sleep hook — restarts bt-nap and
