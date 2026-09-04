@@ -1,8 +1,7 @@
-keymaster-avatar (0.6.0-3+deb13) trixie; urgency=medium
+keymaster-avatar (0.6.0-4+deb13) trixie; urgency=medium
 
-  * Ship NetworkManager drop-in to mark bt-nap-br and bnep*
-    unmanaged — prevents NM from stripping the bridge IP after
-    sleep/wake
+  * Move NM drop-in from /usr/lib/ to /etc/NetworkManager/conf.d/
+    for compatibility across installations
 
  -- Rene Malmgren <duke_h3@dwdc.club>  Thu, 04 Sep 2026 10:00:00 +0200
 
