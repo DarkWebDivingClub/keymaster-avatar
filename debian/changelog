@@ -1,3 +1,11 @@
+keymaster-avatar (0.6.0-5) resolute; urgency=medium
+
+  * Prevent udev from renaming bnep0 to enx* — the rename breaks
+    the BNEP data path (unicast traffic stops flowing)
+  * Add doc/PACKAGING.md documenting system-level patches
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Sat, 06 Sep 2026 09:30:00 +0200
+
 keymaster-avatar (0.6.0-4) resolute; urgency=medium
 
   * Move NM drop-in from /usr/lib/ to /etc/NetworkManager/conf.d/
