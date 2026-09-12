@@ -35,12 +35,6 @@ override_dh_auto_install:
 		debian/keymaster-avatar/usr/lib/environment.d/50-keymaster.conf
 	install -D -m 644 debian/keymaster.sh \
 		debian/keymaster-avatar/etc/profile.d/keymaster.sh
-	install -D -m 755 debian/km-avatar-resume \
-		debian/keymaster-avatar/usr/lib/systemd/system-sleep/km-avatar-resume
-	install -D -m 644 debian/bt-nap-unmanaged.conf \
-		debian/keymaster-avatar/etc/NetworkManager/conf.d/bt-nap-unmanaged.conf
-	install -D -m 644 debian/70-bnep.link \
-		debian/keymaster-avatar/etc/systemd/network/70-bnep.link
 override_dh_auto_test:
 	# skip cargo test during package build
 

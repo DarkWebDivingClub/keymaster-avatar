@@ -1,3 +1,12 @@
+keymaster-avatar (0.6.0-6) resolute; urgency=medium
+
+  * Move BT PAN infrastructure to separate bt-nap package
+  * Add Depends: bt-nap
+  * Remove bt-nap-unmanaged.conf, 70-bnep.link, km-avatar-resume
+    from this package (now shipped by bt-nap)
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Fri, 12 Sep 2026 22:30:00 +0200
+
 keymaster-avatar (0.6.0-5) resolute; urgency=medium
 
   * Prevent udev from renaming bnep0 to enx* — the rename breaks
