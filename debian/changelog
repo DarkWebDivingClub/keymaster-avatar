@@ -1,4 +1,29 @@
-keymaster-avatar (0.6.0-4+deb13) trixie; urgency=medium
+keymaster-avatar (0.7.0-1) resolute; urgency=medium
+
+  * Mission 43: RFCOMM transport (mission 36.2) released
+  * Depends: add rfcomm-relay and strfry (>= 1.1.0-dwdc.2); bt-nap moves
+    to Suggests (mission 36.5 decommissions PAN)
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Tue, 27 Oct 2026 21:22:54 +0100
+
+keymaster-avatar (0.6.0-6) resolute; urgency=medium
+
+  * Move BT PAN infrastructure to separate bt-nap package
+  * Add Depends: bt-nap
+  * Remove bt-nap-unmanaged.conf, 70-bnep.link, km-avatar-resume
+    from this package (now shipped by bt-nap)
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Fri, 12 Sep 2026 22:30:00 +0200
+
+keymaster-avatar (0.6.0-5) resolute; urgency=medium
+
+  * Prevent udev from renaming bnep0 to enx* — the rename breaks
+    the BNEP data path (unicast traffic stops flowing)
+  * Add doc/PACKAGING.md documenting system-level patches
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Sat, 06 Sep 2026 09:30:00 +0200
+
+keymaster-avatar (0.6.0-4) resolute; urgency=medium
 
   * Move NM drop-in from /usr/lib/ to /etc/NetworkManager/conf.d/
     for compatibility across installations
