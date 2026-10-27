@@ -43,8 +43,7 @@ bluetoothctl discoverable off
 ```
 
 Note: `bluetoothctl agent on` does not work non-interactively.
-For automated/SSH pairing, use a Python D-Bus agent (see the
-getting-started-bluetooth guide for code).
+For automated/SSH pairing, use a Python D-Bus agent.
 
 ## Connect
 
