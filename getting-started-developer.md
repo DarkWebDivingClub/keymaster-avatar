@@ -15,8 +15,8 @@ sudo apt install build-essential pkg-config libssl-dev
 ## Build
 
 ```bash
-git clone https://github.com/DarkWebDivingClub/club.dwdc.keymaster.avatar.git
-cd club.dwdc.keymaster.avatar
+git clone https://github.com/DarkWebDivingClub/keymaster-avatar.git
+cd keymaster-avatar
 cargo build --release
 ```
 
@@ -117,13 +117,13 @@ KeyVault CLI:
 
 ```bash
 # Requires JDK 21 and Maven
-git clone https://github.com/DarkWebDivingClub/club.dwdc.keymaster.git
-cd club.dwdc.keymaster
+git clone https://github.com/DarkWebDivingClub/keymaster.git
+cd keymaster
 mvn -pl club.dwdc.keymaster.cli,club.dwdc.keymaster.daemon,club.dwdc.keymaster.desktop \
   -am package -DskipTests
 
-git clone https://github.com/DarkWebDivingClub/club.dwdc.keyvault.git
-cd club.dwdc.keyvault
+git clone https://github.com/DarkWebDivingClub/keyvault.git
+cd keyvault
 mvn -pl club.dwdc.keyvault.cli -am package -DskipTests
 ```
 
@@ -158,6 +158,6 @@ cargo test
 End-to-end tests are in a separate repository:
 
 ```bash
-cd ~/git/club.dwdc.keymaster.e2etest
+cd ~/git/keymaster-e2e-test
 mvn test
 ```
