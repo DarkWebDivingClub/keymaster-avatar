@@ -17,7 +17,10 @@ Nostr signing.
 - Ubuntu 26.04 (Resolute) or Debian 13 (Trixie) on amd64
 - An Android phone with the KeyMaster app installed and configured
   (see [Getting Started with KeyMaster Android](https://github.com/DarkWebDivingClub/keymaster-android/blob/master/getting-started-newbi.md))
-- Phone and desktop on the same WiFi network
+- Working Bluetooth on the desktop (`bluetoothctl list` must show a
+  controller) — the phone connects over Bluetooth, **not** over WiFi,
+  so the two do not need to share a network and nothing is exposed to
+  one
 
 Install `qrencode` for displaying the QR code the phone scans:
 
