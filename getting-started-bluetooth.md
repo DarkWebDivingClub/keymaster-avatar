@@ -1,5 +1,22 @@
 # Getting Started with KeyMaster Avatar over Bluetooth PAN
 
+> ## ⚠ Superseded — do not follow this guide
+>
+> Bluetooth PAN is **no longer the transport**. KeyMaster now uses
+> **RFCOMM**, a serial stream over Bluetooth Classic with no IP layer —
+> which removes the bridge, the DHCP server, the udev rename guard and
+> the sleep hook this guide spends most of its length setting up.
+>
+> **Use [getting-started-newbi.md](getting-started-newbi.md) instead.**
+> It is shorter, and `sudo apt install keymaster-avatar` now pulls in
+> everything needed.
+>
+> `bt-nap` is not a dependency any more (only a `Suggests`) and should
+> not be installed on new machines. This document is kept for the
+> machines still running PAN, and is scheduled for removal with the
+> package itself in keymaster mission 36.5.
+
+
 This guide sets up KeyMaster Avatar using Bluetooth PAN instead of
 WiFi. The phone connects to the laptop over a dedicated Bluetooth
 network, leaving the laptop's WiFi free for internet (cafe hotspots,
@@ -13,7 +30,7 @@ If you want the simpler WiFi setup, see
 - Ubuntu 26.04 (Resolute) or Debian 13 (Trixie) on amd64
 - A working Bluetooth adapter on the laptop
 - An Android phone with the KeyMaster app installed and configured
-  (see [Getting Started with KeyMaster Android](https://github.com/DarkWebDivingClub/club.dwdc.keymaster.android/blob/master/getting-started-newbi.md))
+  (see [Getting Started with KeyMaster Android](https://github.com/DarkWebDivingClub/keymaster-android/blob/master/getting-started-newbi.md))
 - Phone and laptop paired over Bluetooth
 
 Known issue: Samsung S24 Ultra (Android 15, One UI 7) BT PAN is
