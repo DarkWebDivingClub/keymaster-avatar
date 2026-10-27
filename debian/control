@@ -8,7 +8,9 @@ Rules-Requires-Root: no
 
 Package: keymaster-avatar
 Architecture: amd64
-Depends: ${misc:Depends}, ${shlibs:Depends}, gnupg, openssh-client, bt-nap
+Depends: ${misc:Depends}, ${shlibs:Depends}, gnupg, openssh-client,
+ rfcomm-relay, strfry (>= 1.1.0-dwdc.2)
+Suggests: bt-nap
 Description: KeyMaster Avatar daemon and service avatars
  Nostr-based key service relay with SSH, GPG, and Nostr service avatars
  for remote cryptographic key operations.
