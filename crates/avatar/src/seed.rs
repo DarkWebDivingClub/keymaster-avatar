@@ -233,6 +233,58 @@ mod tests {
         assert_ne!(k0.public_key(), k1.public_key());
     }
 
+    // --- x509 golden values (cross-language: Java asserts the same) ---
+    //
+    // Public BIP39 test mnemonic, empty passphrase:
+    //   "abandon abandon abandon abandon abandon abandon abandon abandon
+    //    abandon abandon abandon about"
+    // BIP39 seed (64 bytes) of that mnemonic:
+    const ABANDON_SEED_HEX: &str = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4";
+    // xpub at m/0 (non-hardened, mainnet) — same step as derive_login_keys(seed, 0)
+    const ABANDON_XPUB_M0: &str = "xpub68jrRzQfUmwSaf5Y37Yd5uwfnMRxiR14M3HBonDr91GB7GKEh7R9Mvu2UeCtbASfXZ9FdNo9FwFx6a37HNXUDiXVQFXuadXmevRBa3y7rL8";
+    // x-only pubkey at xpub / protocol_index("x509") / 0
+    const X509_SEQ0_PUBKEY_HEX: &str = "09d8987776ec7b88ac17e00d02e887fc1a99b9b36741a915537b4951b6ecd8b5";
+
+    #[test]
+    fn t8_x509_golden_from_fixed_xpub() {
+        let xpub = Xpub::from_str(ABANDON_XPUB_M0).unwrap();
+        let pk = derive_service_pubkey(&xpub, "x509", 0).unwrap();
+        assert_eq!(pk.to_hex(), X509_SEQ0_PUBKEY_HEX);
+    }
+
+    #[test]
+    fn t8_x509_same_pubkey_both_sides() {
+        use bitcoin::hex::FromHex;
+
+        // Private side: seed -> master -> m/0
+        let seed = Vec::<u8>::from_hex(ABANDON_SEED_HEX).unwrap();
+        let secp = Secp256k1::new();
+        let master = Xpriv::new_master(Network::Bitcoin, &seed).unwrap();
+        let xpriv = master
+            .derive_priv(&secp, &[ChildNumber::from_normal_idx(0).unwrap()])
+            .unwrap();
+
+        // The private side must reproduce the fixed xpub string
+        assert_eq!(Xpub::from_priv(&secp, &xpriv).to_string(), ABANDON_XPUB_M0);
+
+        // Both derivations must land on the same golden channel pubkey
+        let from_priv = derive_service_keys(&xpriv, "x509", 0).unwrap().public_key();
+        let xpub = Xpub::from_str(ABANDON_XPUB_M0).unwrap();
+        let from_pub = derive_service_pubkey(&xpub, "x509", 0).unwrap();
+        assert_eq!(from_priv.to_hex(), X509_SEQ0_PUBKEY_HEX);
+        assert_eq!(from_pub.to_hex(), X509_SEQ0_PUBKEY_HEX);
+    }
+
+    #[test]
+    fn t8_x509_differs_from_other_services() {
+        let login = derive_login_keys(&TEST_SEED, 0).unwrap();
+        let x509 = derive_service_keys(&login.xpriv, "x509", 0).unwrap().public_key();
+        for other in ["ssh", "gpg", "nostr"] {
+            let k = derive_service_keys(&login.xpriv, other, 0).unwrap().public_key();
+            assert_ne!(x509, k, "x509 key collides with {}", other);
+        }
+    }
+
     #[test]
     fn t_read_configured_seed() {
         let dir = std::env::temp_dir().join("keymaster-avatar-test-seed");
