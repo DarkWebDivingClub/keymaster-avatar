@@ -445,7 +445,7 @@ critical: no
 `pkcs11:token=KeyMaster%20X.509;type=private` is not enough: GnuTLS opens a
 session, never searches, and reports "requested data were not available". Use
 the URL with `id=` / `object=` that `p11tool --list-all-privkeys --only-urls`
-(or `--list-all-pubkeys`) prints for the token, e.g. for `certtool
+(public key: `--list-all --only-urls`, `type=public` line) prints for the token, e.g. for `certtool
 --load-privkey`, `p11tool --export-pubkey` and `--test-sign`.
 
 GnuTLS tools load p11-kit's registered modules. `pkcs11-tool` defaults to
