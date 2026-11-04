@@ -10,6 +10,7 @@ members = [
     "crates/pkcs11-gpg",
     "crates/km-ssh-sa",
     "crates/km-x509-sa",
+    "crates/pkcs11-x509",
 ]
 
 [workspace.dependencies]

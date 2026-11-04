@@ -10,7 +10,8 @@ statement is inferred rather than read, it is marked *(inferred)*.
 `km-x509-sa` is the service avatar for X.509 signing. It owns a local Unix
 socket that accepts `list`, `sign` and `import`. It checks each request and
 forwards it to KeyMaster's `"x509"` service channel through the avatar local
-API. The PKCS#11 module (mission 37.1.4) will be its client.
+API. Its client is the PKCS#11 module `km_pkcs11_x509` (mission 37.1.4,
+[pkcs11-module.md](pkcs11-module.md)).
 
 ## 2. Code map
 
@@ -131,7 +132,7 @@ Errors from the avatar local API, passed through unchanged
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (PKCS#11, 37.1.4)
+    participant C as Client (km_pkcs11_x509)
     participant S as km-x509-sa
     participant L as avatar local_api.rs
     participant A as avatar main.rs
