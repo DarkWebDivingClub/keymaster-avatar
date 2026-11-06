@@ -19,6 +19,7 @@ page, and the code blocks here are copied from it verbatim ([sync check](#keepin
 `x509.enrolment.script`), so what you read here is what the test runs.
 
 For how the pieces fit together, see [x509/overview.md](x509/overview.md).
+For OpenVPN with this key, see [x509-openvpn.md](x509-openvpn.md).
 
 ## Prerequisites
 
