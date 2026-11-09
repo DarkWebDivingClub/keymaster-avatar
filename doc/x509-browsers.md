@@ -354,7 +354,7 @@ sequenceDiagram
     end
     Note over C,S: list +7 over the whole first load (measured).<br/>Which call caused which list: not recorded.
 
-    rect rgb(235, 235, 235)
+    rect rgba(128, 128, 128, 0.15)
         Note over C,A: Connection 1
         C->>A: TLS ClientHello
         A-->>C: server certificate (CN=localhost), CertificateRequest
@@ -365,7 +365,7 @@ sequenceDiagram
 
     Note over C: chooser: Alice, OK (remembered per site until restart)
 
-    rect rgb(235, 235, 235)
+    rect rgba(128, 128, 128, 0.15)
         Note over C,A: Connection 2
         C->>A: TLS ClientHello
         A-->>C: server certificate, CertificateRequest
