@@ -20,6 +20,7 @@ page, and the code blocks here are copied from it verbatim ([sync check](#keepin
 
 For how the pieces fit together, see [x509/overview.md](x509/overview.md).
 For OpenVPN with this key, see [x509-openvpn.md](x509-openvpn.md).
+For client authentication in a browser, see [x509-browsers.md](x509-browsers.md).
 
 ## Prerequisites
 
