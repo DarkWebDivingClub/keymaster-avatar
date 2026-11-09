@@ -1,6 +1,6 @@
 # Browser client authentication with a token-held key
 
-Status: mission 37.1.6 (Chrome). Firefox follows in 37.1.7. Test identity: Alice
+Status: missions 37.1.6 (Chrome) and 37.1.7 (Firefox). Test identity: Alice
 (`alice@atlanta.com`), mock km-x509-sa. Builds on the enrolment in
 [x509-enrolment.md](x509-enrolment.md) (37.1.5).
 
@@ -10,8 +10,9 @@ file exists on the client side.
 
 **The demos are run by hand, not in CI**, because a browser is a GUI: the warning page, the
 certificate chooser and the error pages are things a person looks at. So this page has no script and
-no sync check, unlike the enrolment and OpenVPN pages. Everything below was run by hand on 7 and
-8 Nov 2026. Where something was not observed, the page says **not recorded**.
+no sync check, unlike the enrolment and OpenVPN pages. Everything below was run by hand on 7, 8 and
+9 Nov 2026 (Firefox on 9 Nov). Where something was not observed, the page says **not recorded**, and
+steps that were not run say so.
 
 Chrome loads `libkm_pkcs11_x509.so` directly through NSS (`~/.pki/nssdb`), not through
 p11-kit-proxy. The path of one page load:
@@ -22,6 +23,9 @@ Chrome (NSS) -> libkm_pkcs11_x509.so (in the browser process)
     C_SignInit(CKM_ECDSA) + C_Sign(32-byte digest)    -> km-x509-sa "sign"
 apache2 (software server key) checks Alice's cert against test-ca.pem and her CertificateVerify
 ```
+
+Firefox also loads the module directly, but keeps it in its own NSS database per profile
+(`pkcs11.txt`). See [Firefox](#firefox-3717).
 
 For how the pieces fit together, see [x509/overview.md](x509/overview.md). For the module, see
 [x509/pkcs11-module.md](x509/pkcs11-module.md).
@@ -389,6 +393,11 @@ sequenceDiagram
     Note over C,A: A later new connection repeats connection 2 without the chooser: sign +1 (measured).<br/>Cancel in the chooser: ERR_BAD_SSL_CLIENT_AUTH_CERT, peer did not return a certificate, sign +0 (measured).
 ```
 
+**Firefox differs in one place.** Firefox does not drop connection 1 when the server asks for a
+certificate. It keeps that connection open while the chooser is shown (apache error log), so there is
+no connection 2. The `C_Sign` and `sign` part is the same module code; that it runs on the connection
+the chooser held open is *(inferred)*, since Firefox's PKCS#11 calls were not traced.
+
 ## Token interactions (measured)
 
 Measured on 8 Nov 2026 in Chrome against the mock, as deltas of `mock.stats`. Baseline before Chrome:
@@ -424,7 +433,303 @@ because of its EKU. The rows would otherwise look alike.
 
 ## Firefox (37.1.7)
 
-To be written in 37.1.7.
+Alice authenticates to the same server from Firefox. The module is loaded through the GUI (Security
+Devices, Load), with no command-line tooling for the module. Firefox keeps its own NSS database per
+profile (`pkcs11.txt` in the profile directory), not `~/.pki/nssdb`. This is also where a person sees
+the token strings.
+
+Firefox here is the Ubuntu **snap**, the default, tested as is. The mozilla.org tarball was not
+needed. The rig is the one above (apache vhost, environment file, enrolment, OpenSSL rig check). It
+was set up again after a reboot as written there: mock restarted, Alice enrolled again (8/8), apache
+started, rig check passed (Alice, SUCCESS, TLSv1.3, 1 `sign`).
+
+**Versions rehearsed** (9 Nov 2026):
+
+| Item | Value |
+|---|---|
+| Firefox | Mozilla Firefox 159.0, snap (`/usr/bin/firefox` is Ubuntu's wrapper for the snap) |
+| Profile | `~/snap/firefox/common/.mozilla/firefox/<random>.km-demo` |
+| Module | `target/release/libkm_pkcs11_x509.so`, unchanged |
+| Mock key this run | CKA_ID `b1b50ddb...49a0ac3a`; `alice.crt` serial `14:EA:...:F1:D5:51`, valid Nov 9 2026 - Nov 9 2027 |
+
+### The separate profile
+
+A separate profile `km-demo` leaves the normal profile untouched.
+
+```bash
+source ~/km-demo/env.sh
+firefox -CreateProfile km-demo
+ls -d ~/snap/firefox/common/.mozilla/firefox/*.km-demo
+```
+
+### Start Firefox
+
+One terminal runs only Firefox and stays busy. Run the checks in another. No URL yet.
+
+```bash
+X509_SA_SOCK=$X509_SA_SOCK KM_PKCS11_X509_DEBUG=1 firefox -P km-demo --no-remote 2>&1 | grep --line-buffered -i km_pkcs11 | tee $WORKDIR/firefox-km.log
+```
+
+- `-P km-demo --no-remote` runs the demo in its own profile.
+- **`X509_SA_SOCK` is needed for the mock**, because the mock's socket is not at the module's default
+  path. Firefox is started from a terminal only to pass this variable. Loading the module uses only
+  the GUI.
+- **A start without the variable (desktop launcher): not tested.** Against the mock the token would
+  then be unreachable, because the module falls back to `$XDG_RUNTIME_DIR/keymaster-x509-sa.sock`.
+  With a real km-x509-sa at its default socket, a launcher start was expected to need no variable.
+  Not verified, and [the snap's runtime directory](#the-snap) speaks against it.
+
+The checks, from the other terminal:
+
+```bash
+cat ~/km-demo/firefox-km.log; mstats
+pgrep -af 'firefox.*km-demo' | cut -c1-100
+grep -i -A3 keymaster ~/snap/firefox/common/.mozilla/firefox/*.km-demo/pkcs11.txt
+```
+
+### Load the module
+
+1. Open Settings, then Privacy & Security, then Certificates, then **Security Devices...**. The window
+   is titled "Device Manager".
+2. Before loading, it lists only "NSS Internal PKCS #11 Module" (Generic Crypto Services, Software
+   Security Device) and "Builtin Roots Module" (NSS Builtin Objects).
+3. Press **Load**.
+4. Module Name: `KeyMaster`.
+5. Module filename: type the full path, do not use Browse. Replace `/home/<you>` with your own home
+   directory:
+
+   ```text
+   /home/<you>/projects/startup/keymaster-avatar/target/release/libkm_pkcs11_x509.so
+   ```
+
+6. Press OK.
+
+**Success:**
+
+- The module loads. `firefox-km.log` has `km_pkcs11_x509: connected to km-x509-sa`.
+- The mock's `list` rises by 1.
+
+### What the panel shows
+
+The module row `KeyMaster` shows Module `KeyMaster` and Path
+`/home/<you>/projects/startup/keymaster-av...` (truncated in the column).
+
+The token row `KeyMaster X.509` shows ten fields. The first five describe the slot, the last five the
+token.
+
+| Field | Value |
+|---|---|
+| Status | Ready |
+| Description | KeyMaster X.509 |
+| Manufacturer | DWDC |
+| HW Version | 0.1 |
+| FW Version | 0.1 |
+| Label | KeyMaster X.509 |
+| Manufacturer | DWDC |
+| Serial Number | 0000000000000001 |
+| HW Version | 0.1 |
+| FW Version | 0.1 |
+
+**Check: no "GPG", no "RedToken".** The token strings fixed in 37.1.4 read sensibly here. Status is
+"Ready", not "Not logged in".
+
+### The certificate
+
+Settings, Certificates, **View Certificates...**, tab **Your Certificates** shows one group
+`alice@atlanta.co...` with one row:
+
+| Column | Value |
+|---|---|
+| Certificate Name | `alice@atlanta.c...` |
+| Security Device | `KeyMaster X.509` |
+| Serial Number | `14:EA:EB:7A:F7:5A:A...` |
+| Expires On | November 9, 2027 |
+
+### Load the page
+
+1. Go to `https://localhost:8443/`.
+2. The warning "Warning: Potential Security Risk Ahead" appears. Choose Advanced..., then Accept the
+   Risk and Continue. See [why we click through](#why-we-click-through-the-server-warning).
+3. The certificate chooser appears. Select Alice and press OK. Answer it soon: see
+   [the timeout](#how-firefox-handles-the-request).
+
+**Success:**
+
+- The page reads `Hello alice@atlanta.com / Issuer: CN=Test CA 37.1.5 / Verify: SUCCESS / TLSv1.3`.
+- The apache log has
+  `"GET / HTTP/1.1" 200 client="CN=alice@atlanta.com" verify=SUCCESS proto=TLSv1.3`.
+
+**Proves:** Firefox offered a certificate whose key is on the token, and apache verified Alice.
+
+After one restart the warning appeared again. After a later restart Firefox went straight to the
+chooser. The order of warning and chooser was not established: **not recorded** beyond this.
+
+### What the chooser shows
+
+- The text `"localhost" has requested that you identify yourself with a certificate:`.
+- The selection `alice@atlanta.com [14:EA:EB:7A:F7:5A:A8:BE:55:E9:F6:57:A8:8C:3F:04:62:F1:D5:51]`.
+- "Details of selected certificate", with values from this run:
+  - Issued to: `CN=alice@atlanta.com`
+  - Serial number: the certificate's serial
+  - Valid from Nov 9, 2026, 1:04:24 PM GMT+1 to Nov 9, 2027, 1:04:24 PM GMT+1
+  - Key usages: Digital Signature
+  - Email addresses: `alice@atlanta.com`
+  - Issued by: `CN=Test CA 37.1.5`
+  - **Stored on: KeyMaster X.509**
+- The "Remember this decision:" dropdown.
+- Buttons **Don't send a certificate** and **OK**.
+
+**Finding: where the key is stored is shown, the purpose is not.** Compared with Chrome, Firefox shows
+where the key is stored and the keyUsage. Like Chrome, it does not show the EKU, so the purpose (TLS
+client) is still not shown.
+
+### "Remember this decision"
+
+The dropdown offers **Once**, **Permanently** and **For this session** (the default).
+
+**Use Once, for demos and for declining.** A remembered "no" blocks the next attempt without showing
+the chooser (see [below](#a-timed-out-chooser-becomes-a-remembered-no)). A "For this session" choice
+is forgotten at restart. Once itself was not run: this is a recommendation, not an observation.
+
+### Does Firefox ask for a PIN?
+
+**No prompt was seen.** No password prompt for the token appeared at any point: module load,
+certificate list, page loads, restarts. This comes from the operator's memory of the run ("I don't
+remember any"). The panel's Status is "Ready", not "Not logged in".
+
+No PIN prompt is expected: the module's token flags do not set `CKF_LOGIN_REQUIRED`
+(`crates/pkcs11-x509/src/token.rs:167`).
+
+### How Firefox handles the request
+
+**Firefox keeps the connection open while the chooser is shown.** Chrome drops it and reconnects. A
+successful load shows this: connection at 13:24:34, request at 13:24:48, so the chooser was open for
+14 s on the same connection.
+
+**Firefox gives up after about 50 s.** In one run the apache error log has the connection established
+at 13:12:27 and closed by the client at 13:13:18, about 51 s later, while the operator was reading the
+dropdown (`End of file found ... SSL handshake stopped: connection was closed`). Firefox showed "The
+connection has timed out". The mock counted 0 `sign`.
+
+apache has no handshake limit configured (`reqtimeout.conf` has only `header=20-40,minrate=500` and
+`body=10,minrate=500`), so the timeout is on Firefox's side. Which Firefox setting it is: not
+investigated.
+
+Each page load starts with two very short connections that Firefox closes itself within milliseconds,
+then the real connection. They show in apache's error log.
+
+### A timed-out chooser becomes a remembered "no"
+
+After the timeout, the next reload showed no chooser and failed with "Secure Connection Failed ...
+SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT". View Certificates, tab **Authentication Decisions**, listed
+Host `localhost`, Certificate Name "Send no client certificate".
+
+**To clear it:** select the entry, press Delete, reload. The chooser is back.
+
+### Declining
+
+Press **Don't send a certificate** in the chooser.
+
+**Success:**
+
+- Firefox immediately shows "Secure Connection Failed", Error Code
+  `SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT`. It does not hang.
+- The apache error log (`km-test-error.log`) has `peer did not return a certificate`.
+- The mock counts 0 `sign`.
+
+With "For this session" selected, the "no" is remembered in Authentication Decisions. Delete it, or
+use "Once", before trying Alice again. After deleting it, Alice and OK work again.
+
+### Restart persistence
+
+Close Firefox fully (`pgrep` prints nothing) and start it again with the same command. Security
+Devices still lists KeyMaster / KeyMaster X.509 without loading it again, and the page loads as
+Alice.
+
+The module is saved in the profile's `pkcs11.txt`:
+
+```text
+library=/home/<you>/projects/startup/keymaster-avatar/target/release/libkm_pkcs11_x509.so
+name=KeyMaster
+```
+
+### The snap
+
+The snap's confinement did **not** block loading the `.so` from the home directory, nor the
+connection to the socket in `~/km-demo`. The log has `km_pkcs11_x509: connected to km-x509-sa` and the
+mock's `list` rose by 1.
+
+This result covers a socket in `~/km-demo`, the mock's location, and nothing else.
+
+**The default socket path differs inside the snap** (measured):
+
+```bash
+echo "$XDG_RUNTIME_DIR"                                   # /run/user/1000
+snap run --shell firefox -c 'echo "$XDG_RUNTIME_DIR"'     # /run/user/1000/snap.firefox
+```
+
+**Consequence** *(inferred, not tested)*: a snap Firefox started without `X509_SA_SOCK` would look for
+`/run/user/1000/snap.firefox/keymaster-x509-sa.sock` and miss a real km-x509-sa at
+`/run/user/1000/keymaster-x509-sa.sock`. Whether AppArmor would allow the real path: not tested.
+
+**For 37.2 and 37.7:** a real km-x509-sa is the case in 37.2, and Thunderbird is a snap.
+
+### Token interactions in Firefox (measured)
+
+Measured on 9 Nov 2026 in Firefox against the mock, as deltas of `mock.stats`. Baseline before
+Firefox: list 22, sign 3.
+
+| Event | sign | list | Notes |
+|---|---|---|---|
+| Load the module (Security Devices) | +0 | +1 | |
+| View Certificates, Your Certificates | +0 | +3 | |
+| Page load, chooser left open about 50 s | +0 | +3 | Firefox closed the connection: "The connection has timed out"; remembered as "Send no client certificate" |
+| Reload (remembered "no", SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT) + clear the decision + page with Alice | +1 | +5 | combined; 13:17:48 |
+| Firefox restart, load, OK | +1 | +3 | 13:19:47; module still loaded |
+| Reload after more than 10 s idle | +1 | +3 | 13:22:58; no chooser; new full handshake |
+| Restart, two loads with Alice (13:24:48, 13:26:39), then the decline (13:27:01) | +2 | +7 | combined; the decline itself 0 sign |
+| Clear the decision, load with Alice | +1 | +4 | 13:33:49 |
+
+**Reading:** as in Chrome, one `sign` per new TLS connection. A reload after apache's 5 s keep-alive
+has expired costs one `sign` (no resumption seen). Declining and timing out cost no `sign`. `list`
+rises with every look at the token (Firefox start, the certificate list, each page load), since the
+module refreshes from km-x509-sa when its cache is older than 5 s.
+
+**For 37.2:** Firefox waits inside the TLS handshake while the chooser is open and gives up after
+about 50 s, and the phone's approval would also happen inside the handshake (the `sign` for
+CertificateVerify). A slow approval may hit the same limit. The module's `READ_TIMEOUT` is 75 s
+(`crates/pkcs11-x509/src/client.rs:27`), longer than Firefox's roughly 50 s, so for a slow approval
+Firefox is the limit. Not tested with a delayed `sign`.
+
+### Firefox troubleshooting
+
+The first two happened during the hand run. Browse was not used, so the third is a precaution.
+
+| Symptom | Cause and fix |
+|---|---|
+| "The connection has timed out" while the chooser is open | Firefox gave up on the open handshake (about 50 s). Answer the chooser sooner. |
+| No chooser; "Secure Connection Failed", SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT | A remembered "Send no client certificate" (after a decline or a timed-out chooser). View Certificates, Authentication Decisions, delete the `localhost` entry, or restart Firefox if it was "For this session". |
+| Browse in the Load dialog does not show the folder | Type the full path. Whether Browse shows the folder in the snap's file picker is **not recorded**. |
+
+### Not recorded (Firefox)
+
+- The order of the server warning and the chooser.
+- What **Once** and **Permanently** do in practice: neither was run.
+- Whether Browse in the Load dialog works.
+- Which Firefox setting causes the timeout of about 50 s: not investigated.
+- A start without `X509_SA_SOCK` (desktop launcher): not tested.
+- A delayed `sign` during the handshake: not tested.
+- A snap Firefox against a real km-x509-sa at its default socket, and whether AppArmor would allow
+  that path: not tested.
+
+### Firefox cleanup
+
+Neither step has been run yet.
+
+1. **Unload the module in the profile:** Security Devices, select KeyMaster, Unload.
+2. **Remove the demo profile:** from the normal Firefox, open `about:profiles`, go to km-demo, Remove
+   (and delete files). The profile lives under `~/snap/firefox/common/.mozilla/firefox/`, outside
+   `~/km-demo`, so `rm -rf ~/km-demo` does not remove it.
 
 ## Troubleshooting
 
@@ -441,8 +746,15 @@ All of these happened during the hand run.
 
 ## Cleanup
 
-Run this when you are finished with the browser demos, including Firefox if you plan to run it: it
-removes the material both use. See the [warning about an existing apache](#a-fresh-apache).
+Run this when you are finished with both browser demos: it removes the material both use. See the
+[warning about an existing apache](#a-fresh-apache).
+
+**Firefox first, in the GUI** (not yet run, see [Firefox cleanup](#firefox-cleanup)): unload KeyMaster
+in Security Devices of the km-demo profile, then remove the km-demo profile through `about:profiles`
+in the normal Firefox. The profile lives under `~/snap/firefox/common/.mozilla/firefox/`, outside
+`~/km-demo`, so the `rm -rf ~/km-demo` below does not remove it.
+
+**Then the Chrome module and the shared material:**
 
 ```bash
 modutil -dbdir sql:$HOME/.pki/nssdb -force -delete keymaster      # Chrome closed; then -list shows only NSS Internal
