@@ -28,7 +28,7 @@ API. Its client is the PKCS#11 module `km_pkcs11_x509` (mission 37.1.4,
 
 KeyMaster side (repo `keymaster`, for reference): `X509ServiceHandler`,
 `NostrTransport`, `ServiceChannel`. The wire contract is in
-`keymaster/doc/x509.md`.
+`keymaster/doc/X509.md`.
 
 ## 3. Client socket protocol
 

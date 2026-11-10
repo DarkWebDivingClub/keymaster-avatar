@@ -179,15 +179,16 @@ connects to it directly.
 systemctl --user enable --now km-ssh-sa
 systemctl --user enable --now km-gpg-sa
 systemctl --user enable --now km-nostr-sa
+systemctl --user enable --now km-x509-sa
 ```
 
 Verify:
 
 ```bash
-systemctl --user status km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user status km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 ```
 
-All three should be `active (running)`. They will wait for a phone
+All four should be `active (running)`. They will wait for a phone
 to attach before handling requests — this is normal.
 
 ## 8. Set up the phone
@@ -270,6 +271,43 @@ ls -la $NOSTR_SA_SOCK
 
 The socket file should exist.
 
+## 14. Verify X.509
+
+Check the X.509 service avatar with `systemctl`. Its binary is in
+`/usr/lib/keymaster-avatar/bin/`, which is not on your `PATH`.
+
+```bash
+systemctl --user status km-x509-sa
+```
+
+It should be `active (running)`. It listens on
+`$XDG_RUNTIME_DIR/keymaster-x509-sa.sock`.
+
+Then check that PKCS#11 software can see the KeyMaster token. If the
+`p11-kit` command is missing, install it:
+
+```bash
+sudo apt install p11-kit
+```
+
+```bash
+p11-kit list-modules
+```
+
+Among the modules you should see `keymaster`, with a token named
+`KeyMaster X.509`:
+
+```
+module: keymaster
+    path: /usr/lib/keymaster-avatar/lib/libkm_pkcs11_x509.so
+    ...
+    library-description: KeyMaster X.509 PKCS#11
+    ...
+    token: KeyMaster X.509
+```
+
+The token lists no keys yet: X.509 keys reach the phone with mission 37.2.
+
 ## Quick health check
 
 ```bash
@@ -288,7 +326,7 @@ The phone must re-scan the QR code afterward.
 
 ```bash
 sudo systemctl restart km-avatar
-systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 ```
 
 Verify the descriptor was regenerated:
@@ -312,14 +350,14 @@ update `users.toml` with the new key if you use an allowlist.
 ```bash
 # Stop everything
 sudo systemctl stop km-avatar
-systemctl --user stop km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user stop km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 
 # Delete the seed (system service location)
 sudo rm -f /var/lib/keymaster-avatar/seed
 
 # Restart (a new seed is generated automatically)
 sudo systemctl start km-avatar
-systemctl --user start km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user start km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 
 # Display new QR and re-attach from phone
 qrencode -t UTF8 < /run/keymaster-avatar/descriptor.json
@@ -375,7 +413,7 @@ verification steps.
 | `gpg: No secret key` | `export GNUPGHOME=$XDG_RUNTIME_DIR/gnupg-keymaster` and restart km-gpg-sa |
 | `descriptor.json` not found | `sudo systemctl restart km-avatar` |
 | Phone stuck on "Reconnecting..." | Check the phone is still paired and trusted (`bluetoothctl info <PHONE_MAC>`), then `journalctl -u rfcomm-relay` — if there is no `Connection from` line, the phone is not reaching the bridge |
-| Keys worked, then stopped after an upgrade | `km-avatar` restarted and the phone does not notice, so it still thinks it is attached. `sudo systemctl restart rfcomm-relay` — the phone dials back within seconds. After upgrading `keymaster-avatar`, also `systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa`, which keep running the old binaries otherwise |
+| Keys worked, then stopped after an upgrade | `km-avatar` restarted and the phone does not notice, so it still thinks it is attached. `sudo systemctl restart rfcomm-relay` — the phone dials back within seconds. After upgrading `keymaster-avatar`, also `systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa`, which keep running the old binaries otherwise |
 | `ssh-add -l` lists keys but signing fails | The listing is cached public keys and does not prove the phone is reachable. Test with a real signature: `echo x \| gpg --clearsign` |
 | Permission denied on API socket | npub in `users.toml` does not match the phone's identity |
 

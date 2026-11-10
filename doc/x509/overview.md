@@ -17,8 +17,8 @@ then request a certificate from any CA and use it for TLS client authentication.
 | Part | What it added | Document |
 |---|---|---|
 | 37.1.1 | ECDSA P-256 in the vault: `Bip32KeyVault` derives the public point and signs 32-byte digests (raw `r‖s`) | [keyvault/doc/ecdsa-p256.md](../../../keyvault/doc/ecdsa-p256.md) |
-| 37.1.2 | The key's path (`IdentityPaths.x509`), its label (`alice@atlanta.com tls-client`), `X509CertCheck` (does a certificate carry this key, with an allowed EKU?) and `X509CertSlot` (where an accepted certificate is stored) | [keymaster/doc/x509.md](../../../keymaster/doc/x509.md) |
-| 37.1.3 | The `"x509"` service channel: `X509ServiceHandler` (`list`, `sign`, `import`) in KeyMaster, and the service avatar `km-x509-sa` with its local socket | [service.md](service.md), [keymaster/doc/x509.md § X.509 Service](../../../keymaster/doc/x509.md#x509-service) |
+| 37.1.2 | The key's path (`IdentityPaths.x509`), its label (`alice@atlanta.com tls-client`), `X509CertCheck` (does a certificate carry this key, with an allowed EKU?) and `X509CertSlot` (where an accepted certificate is stored) | [keymaster/doc/X509.md](../../../keymaster/doc/X509.md) |
+| 37.1.3 | The `"x509"` service channel: `X509ServiceHandler` (`list`, `sign`, `import`) in KeyMaster, and the service avatar `km-x509-sa` with its local socket | [service.md](service.md), [keymaster/doc/X509.md § X.509 Service](../../../keymaster/doc/X509.md#x509-service) |
 | 37.1.4 | The PKCS#11 module `libkm_pkcs11_x509.so`: the token "KeyMaster X.509", which shows each key as a private and a public key (plus a certificate once enrolled); signing is `CKM_ECDSA`; `C_CreateObject` enrols a certificate | [pkcs11-module.md](pkcs11-module.md) |
 | 37.1.5 | The enrolment: an external CA issues Alice's certificate, requested through the token with standard tools, and a TLS client-auth handshake proves it | [x509-enrolment.md](../x509-enrolment.md) (runbook) and [x509-enrolment.sh](../x509-enrolment.sh) (the same commands as a script; the e2e test runs it) |
 
@@ -218,7 +218,7 @@ Neither does the CA: it sees only the CSR.
 - [x509-enrolment.md](../x509-enrolment.md): the runbook, with troubleshooting.
 - [pkcs11-module.md](pkcs11-module.md): objects, attributes, signing, `C_CreateObject`, tool findings.
 - [service.md](service.md): km-x509-sa's socket protocol, the request flow, channel key derivation.
-- [keymaster/doc/x509.md](../../../keymaster/doc/x509.md): roles, paths, `X509CertCheck`,
+- [keymaster/doc/X509.md](../../../keymaster/doc/X509.md): roles, paths, `X509CertCheck`,
   `X509ServiceHandler`.
 - [keyvault/doc/ecdsa-p256.md](../../../keyvault/doc/ecdsa-p256.md): P-256 derivation and signing in
   the vault.

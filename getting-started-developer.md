@@ -28,6 +28,7 @@ sudo install -t /usr/local/bin \
   target/release/km-ssh-sa \
   target/release/km-gpg-sa \
   target/release/km-nostr-sa \
+  target/release/km-x509-sa \
   target/release/scd-shim
 ```
 
@@ -51,9 +52,11 @@ This is a Rust workspace with the following crates:
 | km-ssh-sa | km-ssh-sa | SSH service avatar — bridges SSH-agent protocol to Avatar |
 | km-gpg-sa | km-gpg-sa | GPG service avatar — bridges Assuan protocol to Avatar |
 | km-nostr-sa | km-nostr-sa | Nostr service avatar — bridges Nostr signing to Avatar |
+| km-x509-sa | km-x509-sa | X.509 service avatar — bridges list, sign and import to Avatar |
 | avatar-protocol | (library) | Shared protocol types, config loading, BIP-32 derivation |
 | scd-shim | scd-shim | Smartcard daemon shim for GPG agent |
-| pkcs11-gpg | (library) | PKCS#11 module for GPG |
+| pkcs11-gpg | libkm_pkcs11_gpg.so | Reference code only: a PKCS#11 module for GPG that is not registered with p11-kit and that nothing loads. The package still ships it |
+| pkcs11-x509 | libkm_pkcs11_x509.so | PKCS#11 module for X.509 keys — the token "KeyMaster X.509", a thin client of km-x509-sa |
 | km-nostr-client | (library) | Typed Rust client for km-nostr-sa |
 
 ## Avatar seed and key derivation
@@ -107,8 +110,8 @@ RuntimeDirectory=keymaster-avatar   # /run/keymaster-avatar/ (transient)
 StateDirectory=keymaster-avatar     # /var/lib/keymaster-avatar/ (persistent)
 ```
 
-User services (`km-ssh-sa`, `km-gpg-sa`, `km-nostr-sa`) use
-`$XDG_RUNTIME_DIR` for sockets.
+User services (`km-ssh-sa`, `km-gpg-sa`, `km-nostr-sa`, `km-x509-sa`)
+use `$XDG_RUNTIME_DIR` for sockets.
 
 ## Optional: host-based KeyMaster
 
