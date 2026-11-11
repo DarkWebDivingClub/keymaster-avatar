@@ -17,6 +17,10 @@ override_dh_auto_install:
 		debian/keymaster-avatar/usr/lib/keymaster-avatar/bin/scd-shim
 	install -D -m 644 target/release/libkm_pkcs11_gpg.so \
 		debian/keymaster-avatar/usr/lib/keymaster-avatar/lib/libkm_pkcs11_gpg.so
+	install -D -m 644 target/release/libkm_pkcs11_x509.so \
+		debian/keymaster-avatar/usr/lib/keymaster-avatar/lib/libkm_pkcs11_x509.so
+	install -D -m 644 debian/keymaster.module \
+		debian/keymaster-avatar/usr/share/p11-kit/modules/keymaster.module
 	install -D -m 644 debian/avatar.toml \
 		debian/keymaster-avatar/etc/keymaster-avatar/avatar.toml
 	install -D -m 644 debian/users.toml \
