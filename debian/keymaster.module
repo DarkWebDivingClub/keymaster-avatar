@@ -1,0 +1,2 @@
+module: /usr/lib/keymaster-avatar/lib/libkm_pkcs11_x509.so
+critical: no
