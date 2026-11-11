@@ -31,6 +31,10 @@ override_dh_auto_install:
 		debian/keymaster-avatar/usr/lib/systemd/user/km-gpg-sa.service
 	install -D -m 644 debian/km-nostr-sa.service \
 		debian/keymaster-avatar/usr/lib/systemd/user/km-nostr-sa.service
+	install -D -m 755 target/release/km-x509-sa \
+		debian/keymaster-avatar/usr/lib/keymaster-avatar/bin/km-x509-sa
+	install -D -m 644 debian/km-x509-sa.service \
+		debian/keymaster-avatar/usr/lib/systemd/user/km-x509-sa.service
 	install -D -m 644 debian/50-keymaster.conf \
 		debian/keymaster-avatar/usr/lib/environment.d/50-keymaster.conf
 	install -D -m 644 debian/keymaster.sh \
