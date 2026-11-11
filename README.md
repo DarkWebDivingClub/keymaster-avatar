@@ -8,13 +8,19 @@ phone, where the private keys live. **Your keys never leave the
 phone** — the desktop only ever sends things to be signed and receives
 signatures back.
 
+A fourth service avatar, `km-x509-sa`, gives PKCS#11 software access to
+X.509 keys through the token "KeyMaster X.509". X.509 keys are not on the
+phone yet; they arrive with mission 37.2, and until then the token lists
+no keys.
+
 ```
  +-----------+     +----------------+     +-----------+
  | Desktop   |     | Service        |     | km-avatar |
  | apps      |---->| avatars        |---->| (system   |
  | ssh / gpg |     | km-ssh-sa      |     |  service) |
  | / nostr   |     | km-gpg-sa      |     +-----+-----+
- +-----------+     | km-nostr-sa    |           | websocket
+ | / pkcs11  |     | km-nostr-sa    |           | websocket
+ +-----------+     | km-x509-sa     |           |
                    +----------------+           v
                                           +-----------+
                                           |  strfry   |
@@ -56,6 +62,7 @@ traffic.
 | km-ssh-sa | User service | SSH agent bridged to Avatar |
 | km-gpg-sa | User service | GPG agent bridged to Avatar |
 | km-nostr-sa | User service | Nostr signing bridged to Avatar |
+| km-x509-sa | User service | X.509 keys for PKCS#11 software, bridged to Avatar (on the phone from mission 37.2) |
 
 ## Getting Started
 
