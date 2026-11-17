@@ -34,7 +34,7 @@ ls -la /run/keymaster-avatar/api-$(id -u).sock
 sudo systemctl status km-avatar
 
 # Check user services
-systemctl --user status km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user status km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 
 # Quick health check
 ssh-add -l && \
@@ -89,16 +89,16 @@ You should see JSON with `relay`, `login_xpub`, and `services`.
 ### Step 2: Restart the service avatars
 
 ```bash
-systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 ```
 
 Verify:
 
 ```bash
-systemctl --user status km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user status km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 ```
 
-All three should be `active (running)`.
+All four should be `active (running)`.
 
 ## Manual Reconnect -- Phone Side
 
@@ -239,5 +239,5 @@ no phone is attached. Attach from the phone first, then restart the
 service avatars:
 
 ```bash
-systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa
+systemctl --user restart km-ssh-sa km-gpg-sa km-nostr-sa km-x509-sa
 ```
