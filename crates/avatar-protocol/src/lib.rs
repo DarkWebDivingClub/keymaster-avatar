@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn t1_31_bit_range() {
         // MSB must always be clear (non-hardened BIP-32 index)
-        for name in &["ssh", "gpg", "nostr", "alice@atlanta.com", "", "x"] {
+        for name in &["ssh", "gpg", "nostr", "x509", "alice@atlanta.com", "", "x"] {
             let idx = protocol_index(name);
             assert_eq!(idx & 0x8000_0000, 0, "MSB set for '{}'", name);
         }
@@ -226,6 +226,9 @@ mod tests {
     fn t1_different_inputs_differ() {
         assert_ne!(protocol_index("ssh"), protocol_index("gpg"));
         assert_ne!(protocol_index("ssh"), protocol_index("nostr"));
+        assert_ne!(protocol_index("x509"), protocol_index("ssh"));
+        assert_ne!(protocol_index("x509"), protocol_index("gpg"));
+        assert_ne!(protocol_index("x509"), protocol_index("nostr"));
     }
 
     // Cross-language golden values (T2) — must match Java MangleTest.t2_*
@@ -242,5 +245,12 @@ mod tests {
     #[test]
     fn t2_cross_language_nostr() {
         assert_eq!(protocol_index("nostr"), 0x0f5392e4);
+    }
+
+    #[test]
+    fn t2_cross_language_x509() {
+        // mangle("x509") must equal 1603287476 on the Java side too.
+        assert_eq!(protocol_index("x509"), 0x5f9039b4);
+        assert_eq!(protocol_index("x509"), 1_603_287_476);
     }
 }

@@ -1,0 +1,32 @@
+[package]
+name = "km-x509-sa"
+version = "0.1.0"
+edition = "2021"
+description = "X.509 Service Avatar - JSON-RPC (list/sign/import) to Avatar local API bridge"
+
+[[bin]]
+name = "km-x509-sa"
+path = "src/main.rs"
+
+[dependencies]
+avatar-protocol = { path = "../avatar-protocol" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Base64 decoding (validation only; bytes stay base64 on the wire)
+base64 = "0.22"
+
+# Error handling
+anyhow = "1"

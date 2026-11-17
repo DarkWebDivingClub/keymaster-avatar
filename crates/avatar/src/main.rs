@@ -227,7 +227,7 @@ async fn main() -> Result<()> {
     let mut descriptor = serde_json::json!({
         "relay": &relay,
         "login_xpub": login_xpub.to_string(),
-        "services": ["ssh", "gpg", "nostr"]
+        "services": ["ssh", "gpg", "nostr", "x509"]
     });
     if let Some(ref addr) = bt_addr {
         descriptor["bt_addr"] = serde_json::Value::String(addr.clone());
