@@ -1,0 +1,14 @@
+[Unit]
+Description=KeyMaster X.509 service avatar
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/keymaster-avatar/bin/km-x509-sa \
+    --avatar-socket /run/keymaster-avatar/api-%U.sock \
+    --listen-socket %t/keymaster-x509-sa.sock
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
