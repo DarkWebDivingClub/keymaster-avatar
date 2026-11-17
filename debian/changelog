@@ -1,3 +1,13 @@
+keymaster-avatar (0.8.0-1) resolute; urgency=medium
+
+  * Mission 37.1: X.509 released
+  * Add km-x509-sa binary and systemd user unit (37.1.3)
+  * Add PKCS#11 module libkm_pkcs11_x509.so, registered with p11-kit
+    (37.1.4)
+  * Recommends: p11-kit-modules
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Tue, 17 Nov 2026 17:21:35 +0400
+
 keymaster-avatar (0.7.0-1) resolute; urgency=medium
 
   * Mission 43: RFCOMM transport (mission 36.2) released
