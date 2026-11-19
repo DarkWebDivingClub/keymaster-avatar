@@ -166,6 +166,37 @@ struct Identity {
     keyref: String,  // e.g. "OPENPGP.1"
 }
 
+/// libgpg-error code for "No secret key".
+const GPG_ERR_NO_SECKEY: u32 = 17;
+
+/// Select the identity a READKEY or PKSIGN request refers to.
+///
+/// `keyid` is a keygrip (what GnuPG 2.4 sends) or a keyref. A keygrip
+/// must match exactly (case-insensitive hex). A keyref is accepted only
+/// if exactly one identity carries it, because keyrefs are assigned by
+/// position and repeat once there are more than two keys.
+///
+/// There is no fallback: a key the attached KeyMaster does not hold
+/// yields `None`, and the caller must answer with an error. Signing
+/// with some other key instead produced signatures from the wrong
+/// identity (bug scd-shim-pksign-wrong-key-fallback, mission 49).
+fn select_identity<'a>(identities: &'a [Identity], keyid: &str) -> Option<&'a Identity> {
+    if keyid.is_empty() {
+        return None;
+    }
+    if let Some(id) = identities
+        .iter()
+        .find(|id| id.keygrip.eq_ignore_ascii_case(keyid))
+    {
+        return Some(id);
+    }
+    let mut by_ref = identities.iter().filter(|id| id.keyref == keyid);
+    match (by_ref.next(), by_ref.next()) {
+        (Some(id), None) => Some(id),
+        _ => None,
+    }
+}
+
 /// Build the canonical S-expression for a full Ed25519 public key,
 /// used in the READKEY response (Assuan protocol).
 ///   (10:public-key(3:ecc(5:curve7:Ed25519)(5:flags5:eddsa)(1:q33:\x40<pubkey>)))
@@ -379,12 +410,7 @@ fn handle_learn(out: &mut impl Write, state: &ScdState) {
 
 fn handle_readkey(out: &mut impl Write, state: &ScdState, args: &str) {
     let keyref = skip_options(args).trim();
-    let identity = state
-        .identities
-        .iter()
-        .find(|id| id.keyref == keyref || id.keygrip == keyref);
-
-    match identity {
+    match select_identity(&state.identities, keyref) {
         Some(id) => {
             let sexp = public_key_sexp(&id.public_key);
             send_data(out, &sexp);
@@ -438,16 +464,12 @@ fn strip_digest_info(data: &[u8]) -> &[u8] {
 fn handle_pksign(out: &mut impl Write, state: &mut ScdState, args: &str, log: &dyn Fn(&str)) {
     let keyid = skip_options(args).trim();
 
-    let identity = state
-        .identities
-        .iter()
-        .find(|id| id.keygrip == keyid || id.keyref == keyid)
-        .or_else(|| state.identities.iter().find(|id| id.keyref == "OPENPGP.3"));
-
-    let identity = match identity {
+    let identity = match select_identity(&state.identities, keyid) {
         Some(id) => id,
         None => {
-            send_err(out, 69, "No matching key found");
+            log(&format!("PKSIGN: refused, no attached key matches {}", keyid));
+            // GPG_ERR_NO_SECKEY: gpg reports "signing failed: No secret key".
+            send_err(out, GPG_ERR_NO_SECKEY, "No secret key for this keygrip on the attached KeyMaster");
             return;
         }
     };
@@ -720,5 +742,77 @@ fn main() {
                 send_ok(&mut stdout, "");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GRIP_A: &str = "30941E40B6D5B9F127151800A059F596840F5391";
+    const GRIP_B: &str = "8F43AEC9DB5CF972B24BF28E4F894057F4EB88A0";
+    const GRIP_C: &str = "0123456789ABCDEF0123456789ABCDEF01234567";
+    const GRIP_UNKNOWN: &str = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF";
+
+    fn identity(index: usize, keygrip: &str, keyref: &str) -> Identity {
+        Identity {
+            public_key: vec![index as u8; 32],
+            index,
+            keygrip: keygrip.to_string(),
+            keyref: keyref.to_string(),
+        }
+    }
+
+    /// Three keys, as assigned at startup: OPENPGP.1, OPENPGP.3, OPENPGP.1.
+    fn three() -> Vec<Identity> {
+        vec![
+            identity(0, GRIP_A, "OPENPGP.1"),
+            identity(1, GRIP_B, "OPENPGP.3"),
+            identity(2, GRIP_C, "OPENPGP.1"),
+        ]
+    }
+
+    #[test]
+    fn known_keygrip_selects_that_identity() {
+        let ids = three();
+        assert_eq!(select_identity(&ids, GRIP_C).map(|id| id.index), Some(2));
+        assert_eq!(select_identity(&ids, GRIP_A).map(|id| id.index), Some(0));
+    }
+
+    #[test]
+    fn keygrip_match_ignores_case() {
+        let ids = three();
+        let lower = GRIP_B.to_ascii_lowercase();
+        assert_eq!(select_identity(&ids, &lower).map(|id| id.index), Some(1));
+    }
+
+    #[test]
+    fn unknown_keygrip_selects_nothing() {
+        // Before mission 49 this fell back to the OPENPGP.3 identity.
+        let ids = three();
+        assert!(select_identity(&ids, GRIP_UNKNOWN).is_none());
+    }
+
+    #[test]
+    fn unique_keyref_selects() {
+        let ids = three();
+        assert_eq!(select_identity(&ids, "OPENPGP.3").map(|id| id.index), Some(1));
+    }
+
+    #[test]
+    fn shared_keyref_selects_nothing() {
+        let ids = three();
+        assert!(select_identity(&ids, "OPENPGP.1").is_none());
+    }
+
+    #[test]
+    fn empty_identity_list_selects_nothing() {
+        assert!(select_identity(&[], GRIP_A).is_none());
+        assert!(select_identity(&[], "OPENPGP.3").is_none());
+    }
+
+    #[test]
+    fn empty_keyid_selects_nothing() {
+        assert!(select_identity(&three(), "").is_none());
     }
 }
