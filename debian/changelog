@@ -1,3 +1,11 @@
+keymaster-avatar (0.8.1-1) resolute; urgency=high
+
+  * Mission 49: scd-shim refuses PKSIGN for a key the attached KeyMaster
+    does not hold, instead of signing with another identity's key
+    (security fix). gpg now reports "No secret key".
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Thu, 19 Nov 2026 16:20:54 +0400
+
 keymaster-avatar (0.8.0-1) resolute; urgency=medium
 
   * Mission 37.1: X.509 released
