@@ -159,6 +159,19 @@ fn find_socket_path() -> PathBuf {
 
 // ---- Identity ----
 
+/// The keyref reported for the key at position `i`: `OPENPGP.1`,
+/// `OPENPGP.2`, … — one per key, never repeated.
+///
+/// gpg-agent's `LEARN` reads every key with `READKEY <keyref>` to write
+/// its shadow stub, and `select_identity` refuses a keyref that more
+/// than one key carries (mission 49). Positional keyrefs that repeated
+/// after the second key therefore left every later key without a stub
+/// (mission 51). Signing selects by keygrip, so the keyref only names the
+/// key.
+fn keyref_for(i: usize) -> String {
+    format!("OPENPGP.{}", i + 1)
+}
+
 struct Identity {
     public_key: Vec<u8>, // 32-byte Ed25519 public key
     index: usize,
@@ -537,7 +550,8 @@ fn handle_getattr(out: &mut impl Write, state: &ScdState, args: &str) {
             send_ok(out, "");
         }
         "$AUTHKEYID" => {
-            if let Some(id) = state.identities.iter().find(|id| id.keyref == "OPENPGP.3") {
+            // The first identity's signing key (position 1), as before.
+            if let Some(id) = state.identities.get(1) {
                 send_status(out, "AUTHKEYID", &id.keyref);
             }
             send_ok(out, "");
@@ -658,13 +672,12 @@ fn main() {
     // avoids running `gpg --list-keys` before the greeting (which would
     // deadlock: gpg-agent is waiting for our greeting, and `gpg` would
     // try to connect to the already-running gpg-agent).
-    let keyrefs = ["OPENPGP.1", "OPENPGP.3"];
     let identities: Vec<Identity> = decoded_identities
         .into_iter()
         .enumerate()
         .map(|(i, (pk, label, index))| {
             let keygrip = compute_keygrip(&pk);
-            let keyref = keyrefs.get(i).unwrap_or(&"OPENPGP.1").to_string();
+            let keyref = keyref_for(i);
             log(&format!(
                 "identity {}: label={}, keyref={}, keygrip={}",
                 i, label, keyref, keygrip
@@ -763,7 +776,9 @@ mod tests {
         }
     }
 
-    /// Three keys, as assigned at startup: OPENPGP.1, OPENPGP.3, OPENPGP.1.
+    /// Three hand-built keys, two sharing a keyref, to check that a shared
+    /// keyref is refused. Startup no longer assigns shared keyrefs
+    /// (`keyref_for`, mission 51).
     fn three() -> Vec<Identity> {
         vec![
             identity(0, GRIP_A, "OPENPGP.1"),
@@ -814,5 +829,78 @@ mod tests {
     #[test]
     fn empty_keyid_selects_nothing() {
         assert!(select_identity(&three(), "").is_none());
+    }
+
+    /// A client on one end of a socket pair; LEARN never talks to it.
+    fn unconnected_client() -> GpgSaClient {
+        let (a, _b) = UnixStream::pair().unwrap();
+        GpgSaClient {
+            reader: io::BufReader::new(a.try_clone().unwrap()),
+            writer: a,
+            next_id: 0,
+        }
+    }
+
+    /// Keys as startup builds them: keyref from `keyref_for`.
+    fn assigned(n: usize) -> Vec<Identity> {
+        (0..n)
+            .map(|i| identity(i, &format!("{:040X}", i + 1), &keyref_for(i)))
+            .collect()
+    }
+
+    #[test]
+    fn keyrefs_are_unique_for_any_number_of_keys() {
+        for n in [1, 2, 3, 4, 12, 40] {
+            let ids = assigned(n);
+            let mut refs: Vec<&str> = ids.iter().map(|id| id.keyref.as_str()).collect();
+            refs.sort();
+            refs.dedup();
+            assert_eq!(refs.len(), n, "{} keys must have {} keyrefs", n, n);
+        }
+    }
+
+    #[test]
+    fn keyrefs_are_numbered_openpgp_from_one() {
+        let ids = assigned(4);
+        let refs: Vec<&str> = ids.iter().map(|id| id.keyref.as_str()).collect();
+        assert_eq!(refs, ["OPENPGP.1", "OPENPGP.2", "OPENPGP.3", "OPENPGP.4"]);
+    }
+
+    #[test]
+    fn every_assigned_keyref_selects_its_own_key() {
+        // What gpg-agent's LEARN does: READKEY by each keyref it was given.
+        // Before mission 51 the third and later keys shared OPENPGP.1, so
+        // these lookups failed and no shadow stub was written.
+        let ids = assigned(12);
+        for id in &ids {
+            assert_eq!(select_identity(&ids, &id.keyref).map(|x| x.index), Some(id.index));
+        }
+    }
+
+    #[test]
+    fn learn_lists_each_key_with_a_distinct_keyref() {
+        let state = ScdState {
+            identities: assigned(12),
+            stored_data: Vec::new(),
+            client: unconnected_client(),
+        };
+        let mut out = Vec::new();
+        handle_learn(&mut out, &state);
+        let text = String::from_utf8(out).unwrap();
+        let mut refs: Vec<&str> = text
+            .lines()
+            .filter(|l| l.starts_with("S KEYPAIRINFO "))
+            .map(|l| l.split_whitespace().nth(3).unwrap())
+            .collect();
+        assert_eq!(refs.len(), 12);
+        refs.sort();
+        refs.dedup();
+        assert_eq!(refs.len(), 12);
+    }
+
+    #[test]
+    fn unknown_keygrip_still_refused_with_assigned_keyrefs() {
+        let ids = assigned(12);
+        assert!(select_identity(&ids, GRIP_UNKNOWN).is_none());
     }
 }
