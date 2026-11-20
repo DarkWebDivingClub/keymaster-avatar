@@ -1,6 +1,6 @@
 [package]
 name = "keymaster-avatar"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2021"
 description = "KeyMaster Avatar - Nostr-based key service relay agent"
 
