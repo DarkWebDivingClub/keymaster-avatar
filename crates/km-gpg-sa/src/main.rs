@@ -234,7 +234,17 @@ async fn main() -> Result<()> {
         .await;
     debug!("gpgconf --kill gpg-agent: {:?}", kill_status);
 
-    // Step 6: LEARN — triggers gpg-agent → scd-shim → connects to our proxy
+    // Step 5.5: Remove placeholder stubs left by km-gpg-sa before 0.8.2.
+    // gpg-agent cannot parse them and LEARN does not replace an existing
+    // file, so a key with a placeholder can never sign (mission 51).
+    match remove_placeholder_stubs(&gnupg_home.join("private-keys-v1.d")) {
+        Ok(0) => {}
+        Ok(n) => info!("Removed {} placeholder stub(s)", n),
+        Err(e) => warn!("Could not check for placeholder stubs: {}", e),
+    }
+
+    // Step 6: LEARN — triggers gpg-agent → scd-shim → connects to our proxy.
+    // gpg-agent writes a real shadow stub for every key scd-shim lists.
     info!("Running SCD LEARN...");
     let learn_output = tokio::process::Command::new("gpg-connect-agent")
         .arg("--homedir")
@@ -292,11 +302,11 @@ async fn main() -> Result<()> {
         info!("Ownertrust set to ultimate");
     }
 
-    // Step 8.5: Create shadow key stubs in private-keys-v1.d/
-    info!("Creating shadow key stubs...");
+    // Step 8.5: Check that LEARN gave every imported key a shadow stub.
+    // A key without one cannot sign. Before 0.8.2 this step wrote
+    // placeholder files instead, which hid the problem and blocked the key
+    // for good (mission 51); now it only reports.
     let privkeys_dir = gnupg_home.join("private-keys-v1.d");
-    std::fs::create_dir_all(&privkeys_dir)?;
-
     let list_output = tokio::process::Command::new("gpg")
         .arg("--homedir")
         .arg(&gnupg_home)
@@ -306,30 +316,11 @@ async fn main() -> Result<()> {
         .arg("--list-keys")
         .output()
         .await?;
-
     if list_output.status.success() {
         let stdout = String::from_utf8_lossy(&list_output.stdout);
-        for line in stdout.lines() {
-            if line.starts_with("grp:") {
-                let fields: Vec<&str> = line.split(':').collect();
-                if fields.len() > 9 {
-                    let keygrip = fields[9];
-                    if keygrip.len() == 40 {
-                        let stub_path = privkeys_dir.join(format!("{}.key", keygrip));
-                        if !stub_path.exists() {
-                            std::fs::write(&stub_path, "(shadowed-private-key)\n")?;
-                            #[cfg(unix)]
-                            {
-                                use std::os::unix::fs::PermissionsExt;
-                                std::fs::set_permissions(
-                                    &stub_path,
-                                    std::fs::Permissions::from_mode(0o600),
-                                )?;
-                            }
-                            info!("Created stub: {}.key", keygrip);
-                        }
-                    }
-                }
+        for keygrip in keygrips_from_colons(&stdout) {
+            if !privkeys_dir.join(format!("{}.key", keygrip)).exists() {
+                warn!("No shadow stub for keygrip {} after LEARN; it cannot sign", keygrip);
             }
         }
     }
@@ -526,4 +517,88 @@ async fn send_and_receive_locked(
     write_line_message(writer, req).await?;
     let resp: JsonRpcResponse = read_line_message(reader).await?;
     Ok(resp)
+}
+
+/// The content km-gpg-sa wrote as a placeholder stub before 0.8.2.
+const PLACEHOLDER_STUB: &[u8] = b"(shadowed-private-key)\n";
+
+/// Delete every `*.key` file in `dir` whose content is exactly the old
+/// placeholder. Real stubs and private keys are left alone. Returns the
+/// number removed; a missing directory counts as none.
+fn remove_placeholder_stubs(dir: &std::path::Path) -> std::io::Result<usize> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("key") {
+            continue;
+        }
+        if std::fs::read(&path)? == PLACEHOLDER_STUB {
+            std::fs::remove_file(&path)?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
+/// Keygrips (40 hex characters) from `gpg --with-colons --with-keygrip`.
+fn keygrips_from_colons(colons: &str) -> Vec<String> {
+    colons
+        .lines()
+        .filter(|l| l.starts_with("grp:"))
+        .filter_map(|l| l.split(':').nth(9))
+        .filter(|g| g.len() == 40)
+        .map(|g| g.to_string())
+        .collect()
+}
+
+#[cfg(test)]
+mod stub_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("km-gpg-sa-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn removes_only_placeholders() {
+        let d = temp_dir("rm");
+        std::fs::write(d.join("AAAA.key"), PLACEHOLDER_STUB).unwrap();
+        std::fs::write(d.join("BBBB.key"), b"(21:protected-private-key(3:ecc...))").unwrap();
+        std::fs::write(d.join("CCCC.key"), [b"(shadowed-private-key".as_slice(), &[b'x'; 200]].concat()).unwrap();
+        std::fs::write(d.join("notes.txt"), PLACEHOLDER_STUB).unwrap();
+        assert_eq!(remove_placeholder_stubs(&d).unwrap(), 1);
+        assert!(!d.join("AAAA.key").exists());
+        assert!(d.join("BBBB.key").exists());
+        assert!(d.join("CCCC.key").exists());
+        assert!(d.join("notes.txt").exists());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn missing_directory_is_not_an_error() {
+        let d = std::env::temp_dir().join("km-gpg-sa-does-not-exist-51");
+        assert_eq!(remove_placeholder_stubs(&d).unwrap(), 0);
+    }
+
+    #[test]
+    fn keygrips_are_read_from_grp_lines() {
+        let colons = "pub:u:255:22:X:1:::u:::cSC:::::ed25519:::0:\n\
+                      fpr:::::::::E697037D6855A29B3A83EAB059D305731952241A:\n\
+                      grp:::::::::2FEB2FDDD72FE8DB9F63AC1AD8B6C5C2735F0FDA:\n\
+                      sub:u:255:22:Y:1::::::s:::::ed25519::\n\
+                      grp:::::::::8BEB0E3FC2DB8DD87209172028067C4745BBE040:\n\
+                      grp:::::::::SHORT:\n";
+        assert_eq!(
+            keygrips_from_colons(colons),
+            ["2FEB2FDDD72FE8DB9F63AC1AD8B6C5C2735F0FDA", "8BEB0E3FC2DB8DD87209172028067C4745BBE040"]
+        );
+    }
 }
