@@ -1,3 +1,15 @@
+keymaster-avatar (0.8.3-1) resolute; urgency=high
+
+  * Mission 52: km-gpg-sa exits when its avatar connection is lost (or
+    the avatar socket is replaced) so Restart=on-failure brings it back
+    clean; gpg no longer fails with "Unknown packet" after an avatar
+    restart until a manual restart.
+  * km-avatar.service: RuntimeDirectoryPreserve=yes, so /run/keymaster-
+    avatar survives restarts and upgrades and containers that bind it
+    keep working.
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Sat, 21 Nov 2026 01:01:27 +0400
+
 keymaster-avatar (0.8.2-1) resolute; urgency=high
 
   * Mission 51: scd-shim gives every key its own keyref (OPENPGP.1, .2, ...)

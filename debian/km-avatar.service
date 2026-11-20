@@ -11,6 +11,7 @@ ExecStart=/usr/bin/keymaster-avatar --config /etc/keymaster-avatar/avatar.toml
 Restart=on-failure
 RestartSec=5
 RuntimeDirectory=keymaster-avatar
+RuntimeDirectoryPreserve=yes
 StateDirectory=keymaster-avatar
 
 [Install]
