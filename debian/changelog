@@ -1,3 +1,12 @@
+keymaster-avatar (0.8.2-1) resolute; urgency=high
+
+  * Mission 51: scd-shim gives every key its own keyref (OPENPGP.1, .2, ...)
+    and km-gpg-sa no longer writes placeholder stubs (and removes old
+    ones). With several identities attached, new OpenPGP keys were
+    unusable ("Unusable secret key") after a key change.
+
+ -- Rene Malmgren <duke_h3@dwdc.club>  Fri, 20 Nov 2026 21:48:23 +0400
+
 keymaster-avatar (0.8.1-1) resolute; urgency=high
 
   * Mission 49: scd-shim refuses PKSIGN for a key the attached KeyMaster
