@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tracing::{debug, error, info, warn};
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(2); // start at 2; 1 is used by connect
@@ -167,6 +167,24 @@ async fn main() -> Result<()> {
 
     // Step 1: Connect to avatar local API (with retry)
     let avatar_stream = connect_with_retry(&avatar_socket).await;
+
+    // Mission 52: the whole startup below (connect, certs, stub clean-up,
+    // LEARN) must run again whenever the avatar connection goes away, so
+    // a lost connection ends the process and systemd's Restart=on-failure
+    // starts a clean one. `lost` is raised by a failed forward or by the
+    // socket watchdog.
+    let lost = Arc::new(Notify::new());
+    match socket_identity(&avatar_socket) {
+        Ok(id) => {
+            tokio::spawn(socket_watchdog(avatar_socket.clone(), id, lost.clone()));
+        }
+        Err(e) => warn!(
+            "Cannot stat {}: {}; socket watchdog disabled",
+            avatar_socket.display(),
+            e
+        ),
+    }
+
     let (reader, mut avatar_writer) = avatar_stream.into_split();
     let mut avatar_reader = BufReader::new(reader);
 
@@ -219,8 +237,9 @@ async fn main() -> Result<()> {
 
     let proxy_writer = avatar_writer.clone();
     let proxy_reader = avatar_reader.clone();
-    let proxy_handle = tokio::spawn(async move {
-        proxy_loop(listener, proxy_writer, proxy_reader).await;
+    let proxy_lost = lost.clone();
+    let mut proxy_handle = tokio::spawn(async move {
+        proxy_loop(listener, proxy_writer, proxy_reader, proxy_lost).await;
     });
 
     // Step 5: Kill stale gpg-agent
@@ -353,8 +372,11 @@ async fn main() -> Result<()> {
     // Step 9: Ready
     info!("GPG ready — proxy active on {}", gpg_socket.display());
 
-    // Step 10: Wait for proxy to end
-    let _ = proxy_handle.await;
+    // Step 10: Wait for the proxy to end or the avatar connection to go.
+    let connection_lost = tokio::select! {
+        _ = &mut proxy_handle => false,
+        _ = lost.notified() => true,
+    };
 
     // Cleanup on shutdown
     info!("Shutting down, killing gpg-agent...");
@@ -367,7 +389,47 @@ async fn main() -> Result<()> {
         .await;
     let _ = std::fs::remove_file(&gpg_socket);
 
+    if connection_lost {
+        // Non-zero exit: Restart=on-failure brings us back with a fresh
+        // connection, fresh certs and a fresh LEARN.
+        error!("Avatar connection lost, exiting for restart");
+        std::process::exit(1);
+    }
     Ok(())
+}
+
+/// The identity (device, inode) of the file at `path`.
+fn socket_identity(path: &std::path::Path) -> std::io::Result<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::metadata(path)?;
+    Ok((m.dev(), m.ino()))
+}
+
+/// True when the avatar socket we connected to has been removed or
+/// replaced by a new one, i.e. the avatar restarted (mission 52).
+fn socket_replaced(connected: (u64, u64), now: std::io::Result<(u64, u64)>) -> bool {
+    match now {
+        Ok(id) => id != connected,
+        Err(_) => true,
+    }
+}
+
+const WATCHDOG_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Raise `lost` as soon as the avatar socket is gone or replaced, so we
+/// restart before the next signature instead of failing it.
+async fn socket_watchdog(path: PathBuf, connected: (u64, u64), lost: Arc<Notify>) {
+    loop {
+        tokio::time::sleep(WATCHDOG_INTERVAL).await;
+        if socket_replaced(connected, socket_identity(&path)) {
+            warn!(
+                "Avatar socket {} was removed or replaced (avatar restarted)",
+                path.display()
+            );
+            lost.notify_one();
+            return;
+        }
+    }
 }
 
 /// Set up GNUPGHOME with config files for gpg-agent + scd-shim.
@@ -436,6 +498,7 @@ async fn proxy_loop(
     listener: UnixListener,
     avatar_writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     avatar_reader: Arc<Mutex<BufReader<tokio::net::unix::OwnedReadHalf>>>,
+    lost: Arc<Notify>,
 ) {
     loop {
         match listener.accept().await {
@@ -443,7 +506,7 @@ async fn proxy_loop(
                 debug!("Accepted proxy connection from scd-shim");
                 let w = avatar_writer.clone();
                 let r = avatar_reader.clone();
-                tokio::spawn(handle_shim_connection(stream, w, r));
+                tokio::spawn(handle_shim_connection(stream, w, r, lost.clone()));
             }
             Err(e) => {
                 error!("Proxy accept error: {}", e);
@@ -459,6 +522,7 @@ async fn handle_shim_connection(
     stream: UnixStream,
     avatar_writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     avatar_reader: Arc<Mutex<BufReader<tokio::net::unix::OwnedReadHalf>>>,
+    lost: Arc<Notify>,
 ) {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -479,20 +543,34 @@ async fn handle_shim_connection(
         let response: JsonRpcResponse = {
             let mut aw = avatar_writer.lock().await;
             let mut ar = avatar_reader.lock().await;
-            match send_and_receive_locked(&mut aw, &mut ar, &request).await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    error!("Proxy forward error: {}", e);
-                    let id = request.id.unwrap_or(serde_json::Value::Null);
-                    JsonRpcResponse::error(id, -32603, format!("proxy error: {}", e))
-                }
-            }
+            forward(&mut aw, &mut ar, request, &lost).await
         };
 
         // Send response back to scd-shim
         if let Err(e) = write_line_message(&mut writer, &response).await {
             error!("Proxy write error: {}", e);
             break;
+        }
+    }
+}
+
+/// Forward one request to the avatar. An I/O failure means the avatar
+/// connection is gone: answer the shim with an error and raise `lost`.
+/// An error *response* from the avatar (e.g. an unknown keygrip refused)
+/// is passed through and is not a lost connection.
+async fn forward(
+    writer: &mut tokio::net::unix::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::unix::OwnedReadHalf>,
+    request: JsonRpcRequest,
+    lost: &Notify,
+) -> JsonRpcResponse {
+    match send_and_receive_locked(writer, reader, &request).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!("Proxy forward error: {}", e);
+            lost.notify_one();
+            let id = request.id.unwrap_or(serde_json::Value::Null);
+            JsonRpcResponse::error(id, -32603, format!("proxy error: {}", e))
         }
     }
 }
@@ -600,5 +678,76 @@ mod stub_tests {
             keygrips_from_colons(colons),
             ["2FEB2FDDD72FE8DB9F63AC1AD8B6C5C2735F0FDA", "8BEB0E3FC2DB8DD87209172028067C4745BBE040"]
         );
+    }
+}
+
+#[cfg(test)]
+mod reconnect_tests {
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    fn split(s: UnixStream) -> (
+        tokio::net::unix::OwnedWriteHalf,
+        BufReader<tokio::net::unix::OwnedReadHalf>,
+    ) {
+        let (r, w) = s.into_split();
+        (w, BufReader::new(r))
+    }
+
+    fn sign_req() -> JsonRpcRequest {
+        JsonRpcRequest::new("gpg.sign", serde_json::json!({}), 7)
+    }
+
+    async fn is_raised(lost: &Notify) -> bool {
+        tokio::time::timeout(std::time::Duration::from_millis(50), lost.notified())
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test]
+    async fn lost_connection_raises_lost() {
+        let (ours, avatar) = UnixStream::pair().unwrap();
+        drop(avatar); // the avatar went away
+        let (mut w, mut r) = split(ours);
+        let lost = Notify::new();
+        let resp = forward(&mut w, &mut r, sign_req(), &lost).await;
+        assert!(resp.error.is_some(), "the shim gets an error");
+        assert!(is_raised(&lost).await, "a lost connection must end the process");
+    }
+
+    #[tokio::test]
+    async fn error_response_does_not_raise_lost() {
+        let (ours, avatar) = UnixStream::pair().unwrap();
+        tokio::spawn(async move {
+            let (mut aw, mut ar) = split(avatar);
+            let mut line = String::new();
+            ar.read_line(&mut line).await.unwrap();
+            let resp = JsonRpcResponse::error(serde_json::json!(7), -32000, "unknown keygrip");
+            let mut out = serde_json::to_vec(&resp).unwrap();
+            out.push(b'\n');
+            aw.write_all(&out).await.unwrap();
+        });
+        let (mut w, mut r) = split(ours);
+        let lost = Notify::new();
+        let resp = forward(&mut w, &mut r, sign_req(), &lost).await;
+        assert_eq!(resp.error.unwrap().message, "unknown keygrip");
+        assert!(!is_raised(&lost).await, "a refusal is not a lost connection");
+    }
+
+    #[test]
+    fn socket_replaced_detects_removal_and_new_inode() {
+        let d = std::env::temp_dir().join(format!("km-gpg-sa-wd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("api.sock");
+        let _l1 = std::os::unix::net::UnixListener::bind(&p).unwrap();
+        let id = socket_identity(&p).unwrap();
+        assert!(!socket_replaced(id, socket_identity(&p)), "same socket");
+        std::fs::remove_file(&p).unwrap();
+        assert!(socket_replaced(id, socket_identity(&p)), "removed");
+        let _keep = std::fs::File::create(d.join("pad")).unwrap(); // avoid inode reuse
+        let _l2 = std::os::unix::net::UnixListener::bind(&p).unwrap();
+        assert!(socket_replaced(id, socket_identity(&p)), "recreated by a restarted avatar");
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }
