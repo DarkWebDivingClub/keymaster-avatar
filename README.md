@@ -73,6 +73,8 @@ traffic.
   Build from source, crate structure, packaging.
 - **[Reconnect Guide](doc/RECONNECT.md)** — Diagnose and fix
   broken connections after sleep, travel, or network changes.
+- **[Sub-avatars](doc/sub-avatar.md)** — Give a container its own
+  avatar that sees only the identities you choose, with a worked example.
 - **[KeyMaster Android](https://github.com/DarkWebDivingClub/keymaster-android)** —
   The phone app (needed for the phone-as-signer setup).
 
