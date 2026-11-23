@@ -8,6 +8,10 @@
 # client-auth handshake (gnutls-cli against gnutls-serv), with a negative
 # control. The private key never leaves KeyMaster.
 #
+# It can be run again for a key that already has a certificate (mission 50):
+# check_cert_state records the stored certificate's serial, and deposit
+# checks that the token then holds exactly one certificate, the new one.
+#
 # Single source: doc/x509-enrolment.md quotes the commands between the
 # runbook marker comments (">>> runbook NAME" ... "<<< runbook") verbatim,
 # in file order, and
@@ -17,7 +21,7 @@
 #
 # Usage:
 #   x509-enrolment.sh              the real enrolment, steps in order:
-#                                  check_no_cert select_key make_csr ca_issue
+#                                  check_cert_state select_key make_csr ca_issue
 #                                  verify_chain deposit handshake handshake_without_cert
 #   x509-enrolment.sh STEP         one step (any of the above, or make_test_pki)
 #
@@ -48,6 +52,10 @@
 # $WORKDIR/logs/. Key material is never printed: no key file is ever shown,
 # and the logs hold only URLs, public certificates, CSRs and tool messages.
 #
+# State: check_cert_state writes the serial of a certificate already on the
+# token to $WORKDIR/previous-serial (and removes the file when there is
+# none); deposit reads it.
+#
 # Exit status: 0 all checks passed, 1 a check failed, 2 usage or setup error.
 
 set -euo pipefail
@@ -67,7 +75,7 @@ TOKEN_URL="pkcs11:token=${TOKEN_LABEL// /%20}"
 DER_FILE="${CERT_FILE%.crt}.der"
 # <<< runbook
 
-ALL_STEPS="check_no_cert select_key make_csr ca_issue verify_chain deposit handshake handshake_without_cert"
+ALL_STEPS="check_cert_state select_key make_csr ca_issue verify_chain deposit handshake handshake_without_cert"
 
 STEP=setup
 LOGS=
@@ -223,25 +231,47 @@ make_test_pki() {
     ok "test CA and server certificate ($SERVER_CERT, CN=localhost) made; server certificate verifies"
 }
 
-check_no_cert() {
-    local log="$LOGS/check_no_cert.p11tool.txt" rc=0 n
+# The token holds no certificate (a first enrolment) or exactly one (a rerun:
+# its serial is recorded so deposit can tell the new certificate from it).
+check_cert_state() {
+    local log="$LOGS/check_cert_state.p11tool.txt" rc=0 n
     need_token
     key_urls
+    rm -f previous-serial
     say "token '$TOKEN_LABEL' lists the tls-client key pair"
     {
-    # >>> runbook check_no_cert
+    # >>> runbook check_cert_state
     p11tool --batch --list-all-certs "$TOKEN_URL"
     # <<< runbook
     } >"$log" 2>&1 || rc=$?
     n=$(grep -c '^Object' "$log" || true)
     if [ "$rc" = 0 ] && [ "$n" = 0 ]; then
-        ok "no certificate on the token (exit 0)"
+        ok "no certificate on the token (exit 0): a first enrolment"
     elif [ "$rc" = 2 ] && [ "$n" = 0 ] && grep -qF 'No matching objects found' "$log"; then
         # p11tool's way of saying "none": exit 2 and this text.
-        ok "no certificate on the token (p11tool exit 2, 'No matching objects found')"
+        ok "no certificate on the token (p11tool exit 2, 'No matching objects found'): a first enrolment"
+    elif [ "$rc" = 0 ] && [ "$n" = 1 ]; then
+        record_stored_serial
     else
-        fail "expected no certificate on the token (p11tool exit $rc, $n object(s))" "$log"
+        fail "expected no certificate or one on the token (p11tool exit $rc, $n object(s))" "$log"
     fi
+}
+
+# record_stored_serial: a rerun. Show the certificate already on the token and
+# write its serial to previous-serial for deposit.
+record_stored_serial() {
+    local log="$LOGS/check_cert_state.stored.txt"
+    {
+    # >>> runbook check_cert_state.stored
+    p11tool --batch --export "$(p11tool --batch --list-all-certs --only-urls "$TOKEN_URL")" > stored.crt
+    openssl x509 -in stored.crt -noout -subject -serial -enddate
+    # <<< runbook
+    } >"$log" 2>&1 || fail "could not read the stored certificate" "$log"
+    grep -q '^serial=' "$log" || fail "no serial in the stored certificate" "$log"
+    sed -n 's/^serial=//p' "$log" > previous-serial
+    say "a certificate is already stored; this run replaces it:"
+    sed 's/^/      /' "$log"
+    ok "one certificate on the token, serial $(cat previous-serial) recorded: a rerun"
 }
 
 # key_urls: sets PRIV, PUB (object URLs of the tls-client key pair) and
@@ -358,7 +388,7 @@ verify_chain() {
 # the certificate and C_CreateObject: a certificate KeyMaster refuses (foreign
 # key, wrong EKU) reaches pkcs11-tool, and its CKR_ code is printed.
 deposit() {
-    local log rc=0 n ids certs_rc=0 match
+    local log rc=0 n ids certs_rc=0 match new_serial
     need_token
     need_files "$CERT_FILE"
     key_urls
@@ -415,6 +445,23 @@ deposit() {
     [ "$certs_rc" = 0 ] && [ "$NCERTS" = 1 ] \
         || fail "expected exactly one certificate (p11tool exit $certs_rc, ${NCERTS:-?} line(s))" "$log"
     ok "exactly one certificate on the token"
+    log="$LOGS/deposit.serial.txt"
+    {
+    # >>> runbook deposit.serial
+    STORED_SERIAL=$(p11tool --batch --export "$(p11tool --batch --list-all-certs --only-urls "$TOKEN_URL")" \
+        | openssl x509 -noout -serial)
+    # <<< runbook
+    } >"$log" 2>&1 || fail "could not read the stored certificate's serial" "$log"
+    new_serial=$(openssl x509 -in "$CERT_FILE" -noout -serial)
+    [ "$STORED_SERIAL" = "$new_serial" ] \
+        || fail "the token's certificate ($STORED_SERIAL) is not $CERT_FILE ($new_serial)" "$log"
+    if [ -s previous-serial ]; then
+        [ "${STORED_SERIAL#serial=}" != "$(cat previous-serial)" ] \
+            || fail "the token still holds the earlier certificate (serial $(cat previous-serial))"
+        ok "the new certificate (${STORED_SERIAL#serial=}) replaced the earlier one ($(cat previous-serial))"
+    else
+        ok "the token's certificate is $CERT_FILE (${STORED_SERIAL#serial=})"
+    fi
 }
 
 # start_server LOGFILE: gnutls-serv (software key, not the token) in the
@@ -511,7 +558,7 @@ main() {
     case "${1:-}" in
         "") steps=$ALL_STEPS ;;
         -h | --help) usage; exit 0 ;;
-        make_test_pki | check_no_cert | select_key | make_csr | ca_issue | verify_chain | deposit \
+        make_test_pki | check_cert_state | select_key | make_csr | ca_issue | verify_chain | deposit \
             | handshake | handshake_without_cert) steps=$1 ;;
         *) usage >&2; exit 2 ;;
     esac

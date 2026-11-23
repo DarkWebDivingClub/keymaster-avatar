@@ -176,19 +176,33 @@ openssl x509 -req -in server.csr -CA "$CA_CERT" -CAkey "$CA_KEY" -CAcreateserial
 The result is a P-256 test CA with `CA:TRUE` and `keyCertSign, cRLSign`, valid for 7 days, and a
 `CN=localhost` server certificate it signed.
 
-## 0. The token has no certificate yet (`check_no_cert`)
+## 0. What the token holds now (`check_cert_state`)
 
-<!-- runbook check_no_cert -->
+The enrolment can be run again for a key that already has a certificate, to renew it or to replace
+it (mission 50). This step tells the two cases apart.
+
+<!-- runbook check_cert_state -->
 ```bash
 p11tool --batch --list-all-certs "$TOKEN_URL"
 ```
 
-**Success:** `No matching objects found`, and p11tool **exits 2**. For p11tool that means "none", not
-an error. The script also checks that the key pair is listed, so an empty answer can't come from a
-token that shows nothing at all.
+**First enrolment:** `No matching objects found`, and p11tool **exits 2**. For p11tool that means
+"none", not an error. The script also checks that the key pair is listed, so an empty answer can't
+come from a token that shows nothing at all.
 
-**Proves:** the starting state is clean. The certificate found after step 4 was put there by this
-enrolment.
+**Rerun:** p11tool exits 0 and lists **one** certificate. The script exports it and records its
+serial in `$WORKDIR/previous-serial`:
+
+<!-- runbook check_cert_state.stored -->
+```bash
+p11tool --batch --export "$(p11tool --batch --list-all-certs --only-urls "$TOKEN_URL")" > stored.crt
+openssl x509 -in stored.crt -noout -subject -serial -enddate
+```
+
+More than one certificate fails: KeyMaster keeps one per key.
+
+**Proves:** the starting state is known. After step 4 the token holds one certificate, and it is the
+one this run issued.
 
 ## 1. Select the key (`select_key`)
 
@@ -320,10 +334,20 @@ NCERTS=$(p11tool --batch --list-all-certs --only-urls "$TOKEN_URL" | wc -l)
 - The token lists **three** objects (private key, public key, X.509 certificate) with **one** shared
   ID.
 - `$NCERTS` is 1.
+- The stored certificate's serial is `$CERT_FILE`'s, and on a rerun it is not the serial step 0
+  recorded:
+
+<!-- runbook deposit.serial -->
+```bash
+STORED_SERIAL=$(p11tool --batch --export "$(p11tool --batch --list-all-certs --only-urls "$TOKEN_URL")" \
+    | openssl x509 -noout -serial)
+```
 
 **Proves:** KeyMaster accepted the certificate. `X509CertCheck` checks that the SPKI is the key's own
 and that the EKU is absent or exactly `clientAuth`. KeyMaster then stored it in the key's
-`X509CertSlot` (`x509_cert` in `key-metadata.json`), and the token now pairs certificate and key.
+certificate store, replacing any earlier certificate: on desktop KeyMaster the `X509CertSlot`
+(`x509_cert` in `key-metadata.json`), on the phone (app 0.6.2 and later) the key's `X509KeyEntry`
+(`cert` in `kv-metadata.json`). The token now pairs certificate and key.
 
 **If KeyMaster refuses** (a certificate for another key, or the wrong EKU such as `serverAuth` or
 `clientAuth,emailProtection`):
@@ -430,7 +454,8 @@ These come from the 37.1.4 tool findings ([pkcs11-module.md §8](x509/pkcs11-mod
 | openssl: `test-ca.srl` not found | A fresh `WORKDIR` has no serial file; `-CAcreateserial` creates it next to `$CA_CERT`. |
 | gnutls-cli cannot read the CA file | Wrong current directory. The script changes into `WORKDIR` itself; by hand, `cd "$WORKDIR"`. |
 | `deposit`: `CKR_ATTRIBUTE_VALUE_INVALID` | KeyMaster's import verdict was `KEY_MISMATCH` (the certificate is for another key) or `EKU_MISMATCH` (an EKU other than exactly `clientAuth`). Nothing was stored. |
-| `check_no_cert` fails: a certificate is already there | This run is a first enrolment. A token that already holds a certificate is a renewal, which this run does not cover; KeyMaster's import replaces the stored certificate. |
+| `check_cert_state` fails: more than one certificate | KeyMaster stores one certificate per key, so this is not KeyMaster's token, or another module answers for it. Check `TOKEN_LABEL`. |
+| `deposit`: "the token still holds the earlier certificate" | The import did not replace it. On the phone before app 0.6.2, `x509.import` answers `unsupported` and pkcs11-tool fails earlier; anything else is a bug. |
 | `deposit` or a signature times out | An ASK prompt was not answered in time (about 70 s). |
 | `port 4433 is already in use` | Another server is running there; set `PORT`. |
 
